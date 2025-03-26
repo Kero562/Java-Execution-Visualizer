@@ -1,0 +1,12 @@
+Manifest-Version: 1.0
+Created-By: Maven JAR Plugin 3.3.0
+Build-Jdk-Spec: 20
+Class-Path: javassist-3.29.2-GA.jar
+Specification-Title: visualizer-agent
+Specification-Version: 1.0
+Implementation-Title: visualizer-agent
+Implementation-Version: 1.0-SNAPSHOT
+Main-Class: AgentMain
+Can-Redefine-Classes: true
+Premain-Class: AgentMain
+
