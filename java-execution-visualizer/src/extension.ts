@@ -1,37 +1,39 @@
 import * as vscode from 'vscode';
 
+const highlightQueue: { editor: vscode.TextEditor, range: vscode.Range }[] = [];
+const HIGHLIGHT_INTERVAL = 100; //ms
+
 let highlightDecoration: vscode.TextEditorDecorationType;
 
 export function activate(context: vscode.ExtensionContext) {
 	console.log('Java Execution Visualizer activated');
 
 	highlightDecoration = vscode.window.createTextEditorDecorationType({
-		backgroundColor: 'rgba(255, 255, 0, 0.3)' // Yellow highlight
+		backgroundColor: 'rgba(255, 255, 0, 0.3)'
 	});
 
-	let poller: ReturnType<typeof setInterval> | undefined;
-
-	vscode.debug.onDidStartDebugSession((session) => {
-		console.log('Debug session started');
-		poller = setInterval(async () => {
-			await updateCurrentExecutionLine();
-		}, 500); // every 500ms
-	});
-
-	vscode.debug.onDidReceiveDebugSessionCustomEvent((event) => {
-		if (event.event === 'output' && event.body?.category === 'console') {
-			const output = event.body.output?.trim();
-			if (output) {
-				handleVisualizerOutput(output);
-			}
+	context.subscriptions.push(vscode.debug.registerDebugAdapterTrackerFactory('java', {
+		createDebugAdapterTracker(session: vscode.DebugSession) {
+			return {
+				onDidSendMessage: msg => {
+					if (msg.type === 'event' && msg.event === 'output') {
+						const output = msg.body.output?.trim();
+						console.log('[Tracker] Output:', output);
+						if (output && output.startsWith('VISUALIZER::')) {
+							handleVisualizerOutput(output);
+						}
+					}
+				}
+			};
 		}
-	});
+	}));
 
-	vscode.debug.onDidTerminateDebugSession((session) => {
-		console.log('Debug session ended');
-		clearInterval(poller);
-		clearHighlights();
-	});
+	setInterval(() => {
+		if (highlightQueue.length > 0) {
+			const { editor, range } = highlightQueue.shift()!;
+			editor.setDecorations(highlightDecoration, [range]);
+		}
+	}, HIGHLIGHT_INTERVAL);	
 }
 
 export function deactivate() {
@@ -83,10 +85,9 @@ async function updateCurrentExecutionLine() {
 }
 
 function handleVisualizerOutput(line: string) {
+	console.log('[Visualizer] Received line:', line);
 	if (!line.startsWith('VISUALIZER::')) 
-		{
-			return;
-		}
+		{return;}
 
 	const match = line.match(/VISUALIZER::(.+?)\.java::LINE::(\d+)/);
 	if (!match) 
@@ -109,7 +110,7 @@ function handleVisualizerOutput(line: string) {
 		lineNumber, editor.document.lineAt(lineNumber).range.end.character
 	);
 
-	editor.setDecorations(highlightDecoration, [range]);
+	highlightQueue.push({ editor, range }); // ⬅️ add to queue instead of immediate
 }
 
 

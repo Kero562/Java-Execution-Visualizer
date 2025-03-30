@@ -36,32 +36,35 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
+const highlightQueue = [];
+const HIGHLIGHT_INTERVAL = 100; //ms
 let highlightDecoration;
 function activate(context) {
     console.log('Java Execution Visualizer activated');
     highlightDecoration = vscode.window.createTextEditorDecorationType({
-        backgroundColor: 'rgba(255, 255, 0, 0.3)' // Yellow highlight
+        backgroundColor: 'rgba(255, 255, 0, 0.3)'
     });
-    let poller;
-    vscode.debug.onDidStartDebugSession((session) => {
-        console.log('Debug session started');
-        poller = setInterval(async () => {
-            await updateCurrentExecutionLine();
-        }, 500); // every 500ms
-    });
-    vscode.debug.onDidReceiveDebugSessionCustomEvent((event) => {
-        if (event.event === 'output' && event.body?.category === 'console') {
-            const output = event.body.output?.trim();
-            if (output) {
-                handleVisualizerOutput(output);
-            }
+    context.subscriptions.push(vscode.debug.registerDebugAdapterTrackerFactory('java', {
+        createDebugAdapterTracker(session) {
+            return {
+                onDidSendMessage: msg => {
+                    if (msg.type === 'event' && msg.event === 'output') {
+                        const output = msg.body.output?.trim();
+                        console.log('[Tracker] Output:', output);
+                        if (output && output.startsWith('VISUALIZER::')) {
+                            handleVisualizerOutput(output);
+                        }
+                    }
+                }
+            };
         }
-    });
-    vscode.debug.onDidTerminateDebugSession((session) => {
-        console.log('Debug session ended');
-        clearInterval(poller);
-        clearHighlights();
-    });
+    }));
+    setInterval(() => {
+        if (highlightQueue.length > 0) {
+            const { editor, range } = highlightQueue.shift();
+            editor.setDecorations(highlightDecoration, [range]);
+        }
+    }, HIGHLIGHT_INTERVAL);
 }
 function deactivate() {
     clearHighlights();
@@ -98,6 +101,7 @@ async function updateCurrentExecutionLine() {
     }
 }
 function handleVisualizerOutput(line) {
+    console.log('[Visualizer] Received line:', line);
     if (!line.startsWith('VISUALIZER::')) {
         return;
     }
@@ -113,7 +117,7 @@ function handleVisualizerOutput(line) {
         return;
     }
     const range = new vscode.Range(lineNumber, 0, lineNumber, editor.document.lineAt(lineNumber).range.end.character);
-    editor.setDecorations(highlightDecoration, [range]);
+    highlightQueue.push({ editor, range }); // ⬅️ add to queue instead of immediate
 }
 // Clear all highlights
 function clearHighlights() {
